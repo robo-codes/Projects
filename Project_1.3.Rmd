@@ -1,0 +1,370 @@
+---
+title: "Project_1.3"
+author: "Ruturaj Solanki, Kunal Vaghela, Satya Akhil Govvala"
+date: "2023-04-23"
+output:
+  word_document: default
+  html_document: default
+  pdf_document: default
+---
+
+## R and RStudio Versions
+
+* R version 4.2.2 (2022-10-31 ucrt) 
+* RStudio 2022.12.0+353 “Elsbeth Geranium” Release (7d165dcfc1b6d300eb247738db2c7076234f6ef0, 2022-12-03) for Windows, Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) RStudio/2022.12.0+353 Chrome/102.0.5005.167 Electron/19.1.3 Safari/537.36
+
+## R Package Used
+
++ ggplot2 (3.4.1)
++ ggthemes (4.2.4)
++ caret (6.0.94)
++ caTools (1.18.2)
++ car (3.1.2)
++ DMwR (0.4.1)
++ glmnet (4.1.7)
++ ResourceSelection (0.3.5)
++ naniar (1.0.o)
+
+```{r warning=FALSE}
+library("ggplot2")
+library("ggthemes")
+library("naniar")
+library("caret")
+library("caTools")
+library("car")
+library("DMwR")
+library("nnet")
+library("glmnet")
+library("ResourceSelection")
+```
+
+***
+
+## Data defination and visiualisation
+
+```{r}
+df <- read.csv("HRD.csv", header=TRUE, stringsAsFactors=FALSE)
+head(df)
+```
+```{r}
+n_miss(df)
+```
+```{r}
+any_na(df)
+```
+```{r}
+miss_var_summary(df)
+```
+```{r}
+ggplot(df)+
+  geom_boxplot(aes(room_type_reserved, avg_price_per_room), color = "black", fill = cm.colors(7), size = 1, alpha = 0.5)
+```
+```{r}
+ggplot(df)+
+  geom_boxplot(aes(booking_status, lead_time), color = "black", fill = cm.colors(2), size = 1, alpha = 0.5)
+```
+
+### Q1 - Identify the explanatory variable.
+
+* Answer: In earlier stages of these projects we have identified two exploratory variables.
++ avg_price_per_room
++ lead_time
+
+### Q2 - Identify the response variable.
+
+* Answer: Above two exploratory variables have these two response variables.<br>
++ room_type_reserved (dependent on avg_price_per_room)
++ booking_status (dependent on lead_time)
+
+> Balancing the Data.
+
+### room_type_reserved and booking_status our response variables.
+
+```{r}
+# Create a table of proportions for room types
+prop.table(table(df$room_type_reserved))
+
+# Create a table of proportions for booking status
+prop.table(table(df$booking_status))
+
+# Set up the plot area
+par(mfrow = c(1, 2))
+
+# Plot the first barplot
+barplot(prop.table(table(df$room_type_reserved)), main = "Proportions of booking Status",
+        ylab = "Proportions", col = "steelblue", las = 2)
+
+# Plot the second barplot
+barplot(prop.table(table(df$booking_status)), main = "Proportions of booking Status", xlab = "Booking Status",
+        ylab = "Proportions", col = "steelblue")
+
+```
+
+#### As we can see both of these variables are imbalanced. So we will need to balance both of them before applying logistic regression.
+
+```{r}
+table(df$room_type_reserved)
+table(df$booking_status)
+```
+
+#### We will remove the room_type 3 as It has only 7 values. Also, there is huge imbalance inbetween catagories. Thus, Many complex balancing techniques will fail such as SMOTE.
+
+```{r}
+df <- df[df$room_type_reserved != "Room_Type 3", ]
+```
+
+##### We will use upsampling for room_type_reserved as we would be left with very few value if we did downsampling. Whereas, for booking_status we will do upsampling.
+
+```{r}
+#Balancing room type reserved using upsample as most of them have very few values.
+balance_data <- upSample(x = df[, -ncol(df)], y=factor(df$room_type_reserved))
+
+#Balancing booking status using downsample
+df_balanced <- downSample(x = df[, -ncol(df)], y = factor(df$booking_status))
+```
+```{r}
+# Combine the two bar graphs side by side
+par(mfrow = c(1, 2))
+
+# Create the first bar graph for room type
+barplot(prop.table(table(balance_data$room_type_reserved)), 
+        main = "Room Types Reserved",
+        ylab = "Proportion",
+        col = "skyblue",
+        ylim = c(0, 0.5),
+        las = 2)
+
+# Create the second bar graph for booking status
+barplot(prop.table(table(df_balanced$booking_status)), 
+        main = "Booking Status",
+        xlab = "Status",
+        ylab = "Proportion",
+        col = "pink",
+        ylim = c(0, 1))
+```
+
+* Outliers in avg_price_per_room
+
+```{r}
+summary(balance_data$avg_price_per_room)
+
+```
+
+* Let's remove the outliers
+
+```{r}
+P_q1 = quantile(balance_data$avg_price_per_room, 0.25)
+P_q3 = quantile(balance_data$avg_price_per_room, 0.75)
+
+P_iqr = IQR(balance_data$avg_price_per_room)
+
+lowest_price = P_q1 - (1.5 * P_iqr)
+Highest_price = P_q3 + (1.5 * P_iqr)
+
+```
+
+### Q3 - Create a logistic regression model and display the full output of the model. (As we do not have any pair of continuous varible which can be identified as explanatory and response variables. Performing a linear regression is not an option.)
+
+* Answer: First performing the logistic regression on avg_price_per_room and room_type_reserved.
+
+```{r}
+# split the data into training and testing sets
+set.seed(100)
+train_indices <- sample(nrow(balance_data), 0.7 * nrow(balance_data))
+train <- balance_data[train_indices, ]
+test <- balance_data[-train_indices, ]
+
+# convert room_type_reserved to factor
+train$room_type_reserved <- factor(train$room_type_reserved)
+
+# train the model
+multinom_model <- multinom(room_type_reserved ~ avg_price_per_room, data = train)
+
+summary(multinom_model)
+
+# get the intercepts for all categories
+coef_mat <- coef(multinom_model)
+intercepts <- coef_mat[,1]
+intercepts
+
+
+```
+
++ Now we will perform logistic regression on booking_status and lead_time.
+
+```{r}
+# Create a new binary variable for booking status
+df_balanced$binary_booking_status <- ifelse(df_balanced$booking_status == "Canceled", 1, 0)
+
+# Train logistic regression model
+model <- glm(binary_booking_status ~ lead_time, data = df_balanced, family = "binomial")
+```
+
+```{r}
+summary(model)
+```
+
+
+
+### Q4 - Using the variables noted in #1 and #2 above and the results of #3, write the equation for your model.
+
+* Answer 4.1 : log(p(Room_Type = i) / p(Room_Type = 1)) = x0 + x1 * avg_price_per_room ; Where room_type 1 is refrence catagory and i is other catagories. x0 is the Intercept, and x1 is the estimated coefficient (slope) of avg_price_per_room where negative value suggests that with the increase in avg_price_per_room the likelyhood of being in room_type i decreases.
+
+* Answer 4.2 : log(p/(1-p)) = -0.854157 + 0.013425 * lead_time; Where P is the probability of canceled booking. (-0.854157) is the entercept and 0.013425 is the slope.
+
+### Q5) What the Intercept means in context of the data.
+
+* Answer 5.1 : It means that the intercept represents the log-odds of the probability that an observation belongs to Room_Type 1 (as it is the refrense catagory), when the average price per room is zero. But we have excluded the 0 values in our dataset as room prices, in most of the cases will be greater than 0.
+
+* Answer 5.2 : the intercept represents the estimated log odds of the dependent variable (binary_booking_status) when the value of the predictor variable (lead_time) is zero. Which basically the baseline probability of booking being canceled or not.
+
+### Q6) Is the intercept a useful/meaningful value in the context of our data? If yes, explain. If not, explain what purpose it serves.
+
+* Answer 6.1 : Yes and No, the intercept is basically the log odds of the refrense catagory(response) when all the predictor are equal to zero. As we have excluded 0 values it does not make much of a difference. But on the other hand, it provides us with the baseline for comparing every catagories (i.e. all the room types).
+
+* Answer 6.2 : Yes, the intercept (-0.85) in this case suggests that when lead_time is 0 (booking is done near to arrival date) the probability of booking being canceled is very less(i.e. not cancelled).
+
+### Q7) Explain what the slope means in the context of the data.
+
+* Answer 7.1 : The changes in log odds of the room_type_reserved with an increase in avg_price_per_room is denoted as slope. When the slope is positive it denotes the increase in log odds of that perticular type and if it's negative the opposite is true.
+
+* Answer 7.2 : The slope of lead_time is 0.013425, which means with the increase in lead_time the log odds of booking being canclled will increase by the value of slope (0.013).
+
+## Model Diagnostics
+
+### Q1 Create two new data columns based on your best model: predicted values for your response variable and the corresponding residuals. 
+
+* Answer : As these are catagorical variables we will just show that if the prediction is correct or not instead of residuals.
+```{r}
+# get predicted probabilities for each category
+probs <- predict(multinom_model, newdata = balance_data, type = "probs")
+
+# calculate predicted values (category with maximum predicted probability)
+balance_data$Room_Type_prediction <- paste0("Room_Type ", apply(probs, 1, which.max))
+
+# Create check column for checking the predictions are true or not?
+balance_data$check <- ifelse(balance_data$Class == balance_data$Room_Type_prediction, "Correct", "Incorrect")
+
+# Predict binary_booking_status using the trained logistic regression model
+df_balanced$predictions <- predict(model, newdata = df_balanced, type = "response")
+
+# Convert predictions to binary values
+df_balanced$predictions_binary <- ifelse(df_balanced$predictions > 0.5, "Not_Canceled", "Canceled")
+
+# Check if predictions are correct
+df_balanced$check_preds <- ifelse(df_balanced$predictions_binary == df_balanced$booking_status, "Correct", "Incorrect")
+
+```
+
+#### Checking how both of our models work on the whole dataset.
+
+```{r}
+ggplot(balance_data)+
+  geom_bar(aes(check, color = check), fill = "lightgrey", alpha = 0.5)+
+  labs(
+    title = "Room Type correct predictions",
+    x = "Fact Check",
+    y = "Frequancy"
+  )+
+  theme_light()+
+  theme(axis.text.x = element_text(angle = 90))
+```
+
+```{r}
+ggplot(df_balanced)+
+  geom_bar(aes(check_preds, color = check_preds), fill = "lightgrey", alpha = 0.5)+
+  labs(
+    title = "Booking Status correct predictions",
+    x = "Fact Check",
+    y = "Frequancy"
+  )+
+  theme_light()+
+  theme(axis.text.x = element_text(angle = 90))
+```
+
+### Q2 Checking for linearity between independent variable and log odds of the dependent variable.
+
+```{r}
+ggplot(df_balanced, aes(x = lead_time, y = predictions)) +
+  geom_point() +
+  geom_smooth(method = "lm", se = FALSE, color = "red")
+
+```
+
+* Answer : As we can see, there is clear and consistent linear pattern, it suggests that linearity assumption in correct and our model is correct for our data.
+
+### Q3 - Goodness of Fit of the model
+
+```{r}
+summary(multinom_model)
+summary(model)
+
+# Conduct Hosmer-Lemeshow goodness-of-fit test
+hoslem.test(df_balanced$binary_booking_status, fitted(model))
+```
+
+* Answer 3.1: As we can see the AIC value and deviance both are quite high, and this suggest that model in not a well fitted one.
+
+* Answer 3.2: As we can see in the output the AIC value is very high which means that the model is not well fitted with data. To add to this, Hosmer and Lemeshow goodness of fit (GOF) test also gives very low p-value which suggests the same. I.e. there are also other factors contributing to booking cancellation other than lead time.
+
+> Understanding the model
+
+#### Plotting the model
+
+```{r}
+# plot the model
+plot(model, col = "black", lwd = 2)
+
+# add a title and axis labels
+xlab("Lead Time")
+ylab("Probability of Booking")
+
+```
+
+#### Plotting Influencial plot to check for the influencial points.
+
+```{r}
+influencePlot(model)
+```
+
+## Conclusion
+
+#### Checking for the accuracy of the model.
+
+```{r}
+# Convert both predicted and actual values to factors with the same levels
+pred <- factor(round(df_balanced$predictions), levels = c("0", "1"))
+actual <- factor(df_balanced$binary_booking_status, levels = c("0", "1"))
+
+# Calculate the accuracy using confusionMatrix() from the caret package
+accuracy <- confusionMatrix(pred, actual)$overall[1]
+
+# Print the accuracy
+cat("Accuracy:", accuracy, "\n")
+
+```
+
+
+* In the conclusion, we can safely say that the accuracy of our model is average (63%) and it needs to be hypertuned. 
+* Also, the response variable's variablity is not just dependent on our predictor variable, there are other hidden factors affecting the response variable as well.
+* The multinominal logistic regression model is also performing poorly. The reason might be the data imbalnce.
+* the influence plot show influencial points which are at the top left and bottom right corner.
+
+
+### Refrences
+1) https://stats.stackexchange.com/questions/297716/how-to-write-a-regression-equation-using-the-output-from-a-summary<br>
+2) https://r-graph-gallery.com/index.html<br>
+3) https://www.geeksforgeeks.org/<br>
+4) https://www.youtube.com/results?search_query=how+to+perform+oversampling+in+R<br>
+5) https://stats.oarc.ucla.edu/r/dae/multinomial-logistic-regression/<br>
+6) https://www.rstudio.com/wp-content/uploads/2015/02/rmarkdown-cheatsheet.pdf<br>
+7) https://www.analyticsvidhya.com/blog/<br>
+8) https://stats.stackexchange.com/questions/65244/how-to-determine-the-accuracy-of-logistic-regression-in-r<br>
+9) https://topepo.github.io/caret/<br>
+10) https://rdrr.io/cran/car/src/R/influencePlot.R<br>
+11) https://search.r-project.org/CRAN/refmans/sjPlot/html/plot_model.html<br>
+12) https://towardsdatascience.com/visualizing-models-101-using-r-c7c937fc5f04<br>
+13) https://topepo.github.io/caret/subsampling-for-class-imbalances.html
+
+
+
