@@ -1,0 +1,69 @@
+```{r}
+library(tidyverse)
+library(nycflights13)
+```
+#Produce a scatter plot of displ vs hwy.
+```{r}
+ggplot(mpg, aes(displ, hwy)) +
+  geom_point()
+```
+
+#Add another aesthetic: map a continuous variable to colour.
+```{r}
+ggplot(mpg, aes(displ, hwy)) +
+  geom_point(aes(color = cty))
+```
+
+#Map the same continuous variable to size.
+```{r}
+ggplot(mpg, aes(displ, hwy)) +
+  geom_point(aes(color = cty, size = cty))
+```
+
+#Map the same continuous variable to shape.
+```{r}
+ggplot(mpg, aes(displ, hwy)) +
+  geom_point(fill = "red")
+```
+
+```{r}
+head(flights)
+```
+
+```{r}
+select(flights, c("dep_time", "dep_delay", "arr_time", "arr_delay"))
+```
+```{r}
+select(flights, c("dep_time", "dep_delay", "arr_time", "arr_delay", "arr_delay"))
+```
+```{r}
+str(flights)
+```
+#Currently dep_time and sched_dep_time are convenient to look at, but hard to compute with because they’re not really continuous numbers. Convert them to a more convenient representation of number of minutes since midnight.
+```{r}
+flights1 = mutate(flights,
+       dep_time = ((dep_time %/% 100) * 60 + (dep_time %% 100)) %% 1440,
+       sched_dep_time = ((sched_dep_time %/% 100) * 60 + (sched_dep_time %% 100)) %% 1440)
+```
+
+```{r}
+head(flights)
+```
+
+
+```{r}
+flights %>% slice(c(1:5, 8, 15:20))
+```
+#Compare air_time with arr_time - dep_time. What do you expect to see? What do you see? What do you need to do to fix it?
+```{r}
+
+```
+
+#Compare dep_time, sched_dep_time, and dep_delay. How would you expect those three numbers to be related?
+```{r}
+flightsdep_delay <- mutate(flightsnew, dep_time_min = tim2min(dep_time), sched_dep_time_min = tim2min(sched_dep_time), act_dep_delay = dep_delay-dep-time + sched_dep_time_min)
+fliter(flightsdep_delay, act_dep_delay != 0)
+```
+
+
+
